@@ -16,7 +16,7 @@ yarn-error.log*
 *.tfstate.*
 .terraform/
 crash.log
-*.tfvars
+
 terraform.tfvars.backup
 
 # Docker images
