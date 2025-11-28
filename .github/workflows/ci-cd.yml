@@ -34,6 +34,15 @@ jobs:
       ecr_repo_url: ${{ steps.ecr_output.outputs.ecr_repo_url }}
     steps:
       - uses: actions/checkout@v4
+      # Step: Configure AWS credentials using OIDC role and secret
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_GITHUB_ROLE }}
+          aws-region: us-east-1
+      # Debug: Show current AWS identity in logs for troubleshooting
+      - name: Whoami AWS
+        run: aws sts get-caller-identity
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
