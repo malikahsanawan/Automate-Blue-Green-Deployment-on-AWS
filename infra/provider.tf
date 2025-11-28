@@ -1,12 +1,2 @@
-terraform {
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = ">= 5.0"
-    }
-  }
-}
-
-provider "aws" {
-  region = var.aws_region
-}
+# (Intentionally left blank)
+# Required providers and aws provider are declared in main.tf only.
