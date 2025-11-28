@@ -22,40 +22,16 @@ jobs:
       - run: npm test --if-present
       - run: npm run build --if-present
 
-  docker-deploy:
-    needs: build-test
-    runs-on: ubuntu-latest
-    env:
-      AWS_REGION: us-east-1
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20.x'
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_GITHUB_ROLE }}
-          aws-region: ${{ env.AWS_REGION }}
-      - name: Log in to Amazon ECR
-        run: |
-          echo "ECR login stub here"
-      - name: Build Docker image
-        run: |
-          docker build -t ${{ secrets.ECR_REPO_URL }}:latest app/
-      - name: Push Docker image
-        run: |
-          echo "Docker push stub. Replace with actual ECR push commands."
-
   terraform-deploy:
-    needs: docker-deploy
+    needs: build-test
     runs-on: ubuntu-latest
     environment:
       name: production
-      url: ${{ steps.deploy.outputs.url }}
     defaults:
       run:
         working-directory: infra
+    outputs:
+      ecr_repo_url: ${{ steps.ecr_output.outputs.ecr_repo_url }}
     steps:
       - uses: actions/checkout@v4
       - name: Setup Terraform
@@ -71,3 +47,57 @@ jobs:
         run: terraform apply -auto-approve tfplan
         env:
           AWS_REGION: ${{ env.AWS_REGION }}
+      - name: Output ECR repo URL
+        id: ecr_output
+        run: |
+          echo "ecr_repo_url=$(terraform output -raw ecr_repo_url)" >> $GITHUB_OUTPUT
+
+  docker-deploy:
+    needs: terraform-deploy
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: us-east-1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_GITHUB_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        run: |
+          aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin ${{ needs.terraform-deploy.outputs.ecr_repo_url }}
+      - name: Build Docker image
+        run: |
+          docker build -t ${{ needs.terraform-deploy.outputs.ecr_repo_url }}:latest app/
+      - name: Push Docker image
+        run: |
+          docker push ${{ needs.terraform-deploy.outputs.ecr_repo_url }}:latest
+
+  terraform-cleanup:
+    if: failure()
+    runs-on: ubuntu-latest
+    needs: [terraform-deploy, docker-deploy]
+    defaults:
+      run:
+        working-directory: infra
+    # Caution: In production, auto-destroy should be guarded with manual approval!
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.5.7
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_GITHUB_ROLE }}
+          aws-region: us-east-1
+      - name: Terraform Init
+        run: terraform init
+      - name: Terraform Destroy
+        run: terraform destroy -auto-approve -var-file="tfvars/prod.tfvars"
