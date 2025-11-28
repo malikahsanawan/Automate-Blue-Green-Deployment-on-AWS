@@ -78,6 +78,43 @@ jobs:
         run: |
           docker push ${{ needs.terraform-deploy.outputs.ecr_repo_url }}:latest
 
+  ecs-blue-green-deploy:
+    needs: docker-deploy
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: us-east-1
+      ECR_REPO_URL: ${{ needs.terraform-deploy.outputs.ecr_repo_url }}
+      COMMIT_SHA: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_GITHUB_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+      # Register ECS Task Definition with the new Docker image tag
+      - name: Register new ECS task definition
+        run: |
+          # Here, use AWS CLI or a script to clone the current task definition,
+          # update the image to "$ECR_REPO_URL:$COMMIT_SHA" and register it.
+          # Save the returned taskDefinitionArn for update steps.
+          echo "Simulated: Register new task def with ECR image"
+      # Update the inactive (standby) service to the new Task Definition
+      - name: Update inactive ECS service
+        run: |
+          # Use AWS CLI to update the inactive service (e.g., 'green' if 'blue' is active, or vice-versa).
+          echo "Simulated: Update standby service to use new task def"
+      # Health Check: Wait for standby service to become healthy
+      - name: Wait for service health
+        run: |
+          # Use AWS CLI or curl to check ALB target health for the updated service
+          echo "Simulated: Wait for standby to become healthy"
+      # Switch ALB listener or Route53 to new (now healthy) environment
+      - name: Switch live traffic
+        run: |
+          # Use AWS CLI to modify ALB listener/target group or update Route53 to point to new service
+          echo "Simulated: Switch live traffic to standby"
+
   terraform-cleanup:
     if: failure()
     runs-on: ubuntu-latest
